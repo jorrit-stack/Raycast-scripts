@@ -2,18 +2,23 @@
 
 # Required parameters:
 # @raycast.schemaVersion 1
-# @raycast.title test
+# @raycast.title Search Front Conversations
 # @raycast.mode compact
 
 # Optional parameters:
-# @raycast.icon 🤖
-# @raycast.argument1 { "type": "text", "placeholder": "Placeholder" }
-# @raycast.packageName test.sh
+# @raycast.icon 📧
+# @raycast.argument1 { "type": "text", "placeholder": "Search term" }
 
 # Documentation:
-# @raycast.description test
-# @raycast.author jorrit_harmamny
-# @raycast.authorURL https://raycast.com/jorrit_harmamny
+# @raycast.description Search Front conversations by subject
+# @raycast.author Your Name
 
-echo "Hello World! Argument1 value: "$1""
+FRONT_API_TOKEN="your_front_api_token"
+SEARCH_TERM="$1"
 
+curl -s -H "Authorization: Bearer $FRONT_API_TOKEN" \
+  "https://api2.frontapp.com/conversations?q=$SEARCH_TERM" | jq .
+
+  # Example: Get conversation details by ID
+curl -s -H "Authorization: Bearer $FRONT_API_TOKEN" \
+  "https://api2.frontapp.com/conversations/90194786129" | jq .

@@ -1,0 +1,65 @@
+#!/usr/bin/env node
+
+// Required parameters:
+// @raycast.schemaVersion 1
+// @raycast.title Unix Timestamp Converter
+// @raycast.mode fullOutput
+// @raycast.icon 🕒
+// @raycast.argument1 { "type": "text", "placeholder": "Snippet JSON file path or Unix timestamp", "optional": true }
+// Documentation:
+// @raycast.description Pretty-print a JSON snippet file, converting Unix timestamps to readable UTC
+// @raycast.author jorrit_harmamny
+// @raycast.authorURL https://raycast.com/jorrit_harmamny
+
+const fs = require("fs");
+const path = require("path");
+
+const input = process.argv[2];
+
+function isUnixMsTimestamp(n) {
+  return typeof n === "number" && n > 1e12 && n < 2e13;
+}
+
+function convertTimestamps(obj) {
+  if (typeof obj === "number" && isUnixMsTimestamp(obj)) {
+    return {
+      original: obj,
+      utc: new Date(obj).toISOString()
+    };
+  } else if (Array.isArray(obj)) {
+    return obj.map(convertTimestamps);
+  } else if (typeof obj === "object" && obj !== null) {
+    const out = {};
+    for (const key in obj) {
+      out[key] = convertTimestamps(obj[key]);
+    }
+    return out;
+  }
+  return obj;
+}
+
+if (!input) {
+  console.error("Please provide a JSON file path or a Unix timestamp.");
+  process.exit(1);
+}
+
+// Try to parse as number first
+const asNumber = Number(input);
+if (!isNaN(asNumber) && isUnixMsTimestamp(asNumber)) {
+  // Single timestamp mode
+  console.log(JSON.stringify(convertTimestamps(asNumber), null, 2));
+  process.exit(0);
+}
+
+// Otherwise, treat as file path
+let data;
+try {
+  const raw = fs.readFileSync(input, "utf8");
+  data = JSON.parse(raw);
+} catch (e) {
+  console.error("Failed to read or parse JSON file:", e.message);
+  process.exit(1);
+}
+
+const converted = convertTimestamps(data);
+console.log(JSON.stringify(converted, null, 2));
