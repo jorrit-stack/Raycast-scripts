@@ -18,7 +18,7 @@ input="$1"
 
 if [[ "$input" =~ ^[0-9]+$ ]]; then
   # If input is only digits, treat as ID
-  url="https://stackblitz.com/admin/users?q%5Bid_eq%5D=${brian@bowtaifitness.com3394367&commit=Filter&order=id_desc"
+  url="https://stackblitz.com/admin/users?q%5Bid_eq%5D=${input}&commit=Filter&order=id_desc"
 else
   # Otherwise, treat as email
   encoded=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$input")
