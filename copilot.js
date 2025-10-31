@@ -1,30 +1,13 @@
 #!/usr/bin/env node
-// filename: ask-gemini.js
 
-// Dependencies:
-// - node (https://nodejs.org)
-// - chrome-cli (https://github.com/prasmussen/chrome-cli) via Homebrew: brew install chrome-cli
-//
-// macOS permissions (REQUIRED):
-// - System Settings > Privacy & Security > Accessibility:
-//   - Enable for: Terminal (if running via terminal), Raycast (if running via Raycast), and "Google Chrome"
-// - System Settings > Privacy & Security > Automation:
-//   - Allow your calling app (Terminal/Raycast) to control "Google Chrome" and "System Events"
-// Chrome setting (REQUIRED):
-// - In Chrome: View > Developer > Allow JavaScript from Apple Events (older versions) or enable "Allow Apple Events from JavaScript"
-//   If that menu isn't visible, it's typically gated behind chrome://flags; otherwise the DOM injection below uses AppleScript "do JavaScript" without needing that flag.
-//
-// Raycast parameters:
 // @raycast.schemaVersion 1
-// @raycast.title Ask Gemini
+// @raycast.title Ask Copilot
 // @raycast.mode silent
-// @raycast.packageName Gemini
-// @raycast.icon 🥽
+// @raycast.packageName Copilot
+// @raycast.icon 🤖
 // @raycast.argument1 { "type": "text", "placeholder": "Selected Text", "optional": true }
-// @raycast.argument2 { "type": "text", "placeholder": "Prompt"}
-// @raycast.description Open Gemini in Chrome Browser and submit a prompt with optional selected text as context
-// @raycast.author jorrit_harmamny
-// @raycast.authorURL https://raycast.com/jorrit_harmamny
+// @raycast.argument2 { "type": "text", "placeholder": "Prompt" }
+// @raycast.description Open Microsoft Copilot in Chrome and submit a prompt with optional selected text as context
 
 const { execSync } = require("child_process");
 const fs = require("fs");
@@ -38,9 +21,21 @@ function sh(cmd, opts = {}) {
 const prompt = process.argv[3] || "";
 const selectedText = process.argv[2] || "";
 const recipientName = process.argv[4] || "";
-
-// Optional Bolt support profile via env var
+const useCopilotApp = process.env.COPILOT_APP === "1";
 const useBoltSupport = process.env.BOLT_SUPPORT === "1";
+
+// Common rules
+const commonRules = [];
+if (recipientName && recipientName.trim() !== "") {
+  commonRules.push(
+    `If the email context doesn't include a recipient name, address them by name: ${recipientName}. Start with a friendly greeting using their name.`
+  );
+}
+commonRules.push(
+  "Do not include my name or any signature/footer. Write only the reply body."
+);
+
+// Optional Bolt support profile (match Gemini guidance exactly)
 const boltGuidelines = [
   "You are a bolt.new support agent.",
   "Your task is to draft a clear, professional email reply to the customer.",
@@ -55,25 +50,12 @@ const boltGuidelines = [
   "Do not use em dashes (—); use a regular hyphen (-) instead.",
 ].join("\n");
 
-// Common rules applied always
-const commonRules = [];
-if (recipientName && recipientName.trim() !== "") {
-  commonRules.push(
-    `If the email context doesn't include a recipient name, address them by name: ${recipientName}. Start with a friendly greeting using their name.`
-  );
-}
-commonRules.push(
-  "Do not include my name or any signature/footer. Write only the reply body."
-);
-
 const baseBlock = commonRules.join("\n");
-
 const mergedInstructions = (() => {
   if (!useBoltSupport) {
     if (prompt && prompt.trim() !== "") return [baseBlock, prompt].filter(Boolean).join("\n\n");
     return baseBlock;
   }
-  // Bolt profile
   const withBolt = [baseBlock, boltGuidelines].filter(Boolean).join("\n");
   if (prompt && prompt.trim() !== "") return `${withBolt}\n\nAdditional instructions from user:\n${prompt}`;
   return withBolt;
@@ -91,37 +73,73 @@ try {
   console.error("Failed to copy to clipboard:", e.message);
 }
 
-// Ensure Chrome is running
-try {
-  sh('open -a "Google Chrome"');
-} catch (e) {
-  console.error("Failed to open Google Chrome:", e.message);
-}
+let appleScript = "";
 
-// Open Gemini in Chrome explicitly via chrome-cli (uses existing window)
-try {
-  // If chrome-cli is not installed, this will throw
-  sh('chrome-cli open "https://gemini.google.com/app"');
-} catch (e) {
-  // Fallback: use `open` if chrome-cli isn't available
-  sh('open -a "Google Chrome" "https://gemini.google.com/app"');
-}
-
-// AppleScript: activate Chrome and paste (keep it simple to avoid syntax issues)
-const appleScript = `
-tell application "Google Chrome" to activate
-delay 0.9
+if (useCopilotApp) {
+  // Use the macOS Copilot app; just activate and paste into current chat
+  try {
+    // Prefer explicit path if available
+    const explicitPath = "/System/Volumes/Data/Applications/Copilot.app";
+    try {
+      sh(`open -a "${explicitPath}"`);
+    } catch (_) {
+      // Fall back to common app names
+      try { sh('open -a "Copilot"'); } catch (__) {
+        try { sh('open -a "Microsoft Copilot"'); } catch (___) {
+          // Try by bundle id as last resort
+          try { sh('open -b com.microsoft.copilot'); } catch (____) {}
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to open Microsoft Copilot app:", e.message);
+  }
+  appleScript = `
+try
+  tell application "Copilot" to activate
+on error
+  try
+    tell application "Microsoft Copilot" to activate
+  on error
+    try
+      tell application id "com.microsoft.copilot" to activate
+    on error
+      -- If all fails, do nothing; System Events will still paste to frontmost app if any
+    end try
+  end try
+end try
+delay 1.0
 tell application "System Events" to keystroke "v" using {command down}
 delay 0.2
-tell application "System Events" to key code 36 -- press Return to submit
+tell application "System Events" to key code 36
 `;
+} else {
+  // Web flow (Chrome). This may open a new tab; acceptable for web usage.
+  try {
+    sh('open -a "Google Chrome"');
+  } catch (e) {
+    console.error("Failed to open Google Chrome:", e.message);
+  }
+  const COPILOT_URL = "https://copilot.microsoft.com/";
+  try {
+    sh(`chrome-cli open "${COPILOT_URL}"`);
+  } catch (e) {
+    sh(`open -a "Google Chrome" "${COPILOT_URL}"`);
+  }
+  appleScript = `
+tell application "Google Chrome" to activate
+delay 1.0
+tell application "System Events" to keystroke "v" using {command down}
+delay 0.3
+tell application "System Events" to key code 36
+`;
+}
 
-// Write AppleScript to a temp file to avoid shell escaping issues
-const tmpScriptPath = path.join(os.tmpdir(), `gemini_autopaste_${Date.now()}.applescript`);
+const tmpScriptPath = path.join(os.tmpdir(), `copilot_autopaste_${Date.now()}.applescript`);
 try {
   fs.writeFileSync(tmpScriptPath, appleScript, { encoding: "utf8" });
   execSync(`osascript "${tmpScriptPath}"`, { stdio: "inherit" });
-  console.log("Prompt pasted into Gemini.");
+  console.log("Prompt pasted into Copilot.");
 } catch (e) {
   console.warn("Auto-paste failed; prompt is in clipboard. Paste manually (Cmd+V).");
   console.warn(e.message);
@@ -130,3 +148,5 @@ try {
 }
 
 process.exit(0);
+
+
