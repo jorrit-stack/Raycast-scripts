@@ -46,18 +46,32 @@ on run argv
           else
             -- Chrome, Brave, Edge, Chromium support execute javascript
             set pageText to execute theTab javascript "
-              const text = [];
-              // Get table cells with IDs
-              document.querySelectorAll('td').forEach(td => {
-                if (/^\\d{4,}$/.test(td.textContent.trim())) {
-                  text.push(td.textContent.trim());
+              try {
+                const text = [];
+                // Get all table rows
+                document.querySelectorAll('tr').forEach(row => {
+                  const cells = row.querySelectorAll('td');
+                  if (cells.length > 0) {
+                    // First cell in row might be the ID
+                    const firstCell = cells[0].textContent.trim();
+                    if (/^\\d{4,}$/.test(firstCell)) {
+                      text.push('ID:' + firstCell);
+                    }
+                  }
+                });
+                // Also try data attributes
+                document.querySelectorAll('[data-user-id], [data-id]').forEach(el => {
+                  const uid = el.getAttribute('data-user-id') || el.getAttribute('data-id');
+                  if (uid && /^\\d{4,}$/.test(uid)) text.push('ID:' + uid);
+                });
+                // Get text content of the whole body as fallback
+                if (text.length === 0) {
+                  text.push(document.body.innerText);
                 }
-              });
-              // Get any visible user IDs
-              document.querySelectorAll('[data-user-id]').forEach(el => {
-                text.push(el.getAttribute('data-user-id'));
-              });
-              text.join('\\n')
+                text.join('\\n');
+              } catch(e) {
+                document.body.innerText || '';
+              }
             "
             if pageText is missing value then set pageText to ""
           end if
@@ -93,12 +107,14 @@ page_url=$(printf "%s" "$content" | awk 'NR==1{print; exit}')
 page_title=$(printf "%s" "$content" | awk '/^---TITLE---$/{getline; print; exit}')
 page_text=$(printf "%s" "$content" | awk 'f{print} /^---TEXT---$/{f=1}')
 
+echo "Debug: Using browser: $running_app" >&2
+
 # Try several extraction strategies:
 # 1) From URL paths and query parameters
 from_url=$(printf "%s\n%s\n" "$page_url" "$page_title" | grep -Eo '/users/([0-9]{4,})|[?&]id=([0-9]{4,})|/admin/users/([0-9]{4,})|user_id=([0-9]{4,})' | grep -Eo '[0-9]{4,}' | head -n1 || true)
 
-# 2) From page text with expanded patterns
-from_context=$(printf "%s" "$page_text" | grep -Eio '(user.?id|user.?number|uid|^[0-9]{6,}$)[:#\s]*[0-9]{4,}|\bid[:#\s]*[0-9]{4,}' | grep -Eo '[0-9]{4,}' | head -n1 || true)
+# 2) From page text with expanded patterns (including our ID: prefix)
+from_context=$(printf "%s" "$page_text" | grep -Eio '(ID:|user.?id|user.?number|uid|^[0-9]{6,}$)[:#\s]*[0-9]{4,}|\bid[:#\s]*[0-9]{4,}' | grep -Eo '[0-9]{4,}' | head -n1 || true)
 
 # 2b) Try to extract from title if it contains "User ID" or similar
 from_title=$(printf "%s" "$page_title" | grep -Eio 'user.?id[:#\s]*[0-9]{4,}' | grep -Eo '[0-9]{4,}' | head -n1 || true)
@@ -201,14 +217,24 @@ APPLESCRIPT
         candidate=$(echo "$clipboard_content" | grep -A 3 -E '^Id[[:space:]]' | grep -Eo '^[0-9]{4,}' | head -n1 || true)
       fi
       
-      # 3. Any line that starts with digits and contains email pattern
+      # 3. Look for lines with email and extract any digits before/after
       if [[ -z "$candidate" ]]; then
-        candidate=$(echo "$clipboard_content" | grep -E '@.*\.(nl|com|org)' | grep -Eo '^[0-9]{4,}|[[:space:]][0-9]{4,}[[:space:]]' | grep -Eo '[0-9]{4,}' | head -n1 || true)
+        # Find line with email, then look for 4+ digit number on same or adjacent lines
+        email_line=$(echo "$clipboard_content" | grep -n '@' | head -n1 | cut -d: -f1)
+        if [[ -n "$email_line" ]]; then
+          # Get context around email line (5 lines before and after)
+          candidate=$(echo "$clipboard_content" | sed -n "$((email_line-5)),$((email_line+5))p" | grep -Eo '\b[0-9]{4,}\b' | head -n1 || true)
+        fi
       fi
       
-      # 4. Fallback: just find any 4+ digit number
+      # 4. Try to find number-email pattern in a single line
       if [[ -z "$candidate" ]]; then
-        candidate=$(echo "$clipboard_content" | grep -Eo '\b[0-9]{4,}\b' | head -n1 || true)
+        candidate=$(echo "$clipboard_content" | grep -E '[0-9]{4,}.*@' | grep -Eo '\b[0-9]{4,}\b' | head -n1 || true)
+      fi
+      
+      # 5. Fallback: just find any 4+ digit number (but skip common false positives like years)
+      if [[ -z "$candidate" ]]; then
+        candidate=$(echo "$clipboard_content" | grep -Eo '\b[0-9]{5,}\b' | head -n1 || true)
       fi
       
       echo "Clipboard extraction result: '$candidate'" >&2
@@ -240,33 +266,8 @@ menu_choice=$(/usr/bin/osascript -e 'tell application "System Events" to activat
 
 case "$menu_choice" in
   "Rate Limits")
-    # Show submenu for rate limits options
-    rate_limits_choice=$(/usr/bin/osascript -e 'tell application "System Events" to activate' \
-      -e "display dialog \"Rate Limits for ${USERID}\" with title \"Bolt Admin\" buttons {\"Cancel\", \"Open in Browser\", \"Show Here\"} default button \"Show Here\" cancel button \"Cancel\"" \
-      -e 'return button returned of result')
-    
-    case "$rate_limits_choice" in
-      "Show Here")
-        echo "\nFetching rate limits for $USERID...\n"
-        json_text=$(curl -s "https://bolt.new/api/rate-limits/$USERID")
-        
-        if [[ -n "$json_text" ]]; then
-          if command -v jq >/dev/null 2>&1; then
-            echo "$json_text" | jq .
-            echo "\nToken usage today: $(echo "$json_text" | jq '.tokenStats.totalToday')"
-            echo "Token usage this month: $(echo "$json_text" | jq '.tokenStats.totalThisMonth')"
-            echo "Max per day: $(echo "$json_text" | jq '.tokenStats.maxPerDay')"
-            echo "Max per month: $(echo "$json_text" | jq '.tokenStats.maxPerMonth')"
-          else
-            echo "$json_text"
-            echo "\nInstall jq for pretty printing: brew install jq"
-          fi
-        fi
-        ;;
-      "Open in Browser")
-        open "https://bolt.new/api/rate-limits/$USERID"
-        ;;
-    esac
+    # Open rate limits page (requires authentication)
+    open "https://bolt.new/api/rate-limits/$USERID"
     ;;
     
   "Reset Tokens")
