@@ -20,7 +20,7 @@ TYPE="$2"
 
 if [[ "$TYPE" == "monthly" ]]; then
     echo "Opening monthly tokens reset for UserID: $USERID"
-    open "https://bolt.new/api/rate-limits/$USERID"
+    open "https://bolt.new/api/rate-limits/reset/$USERID/month"
 elif [[ "$TYPE" == "all" ]]; then
     echo "Opening all tokens reset (including rollovers) for UserID: $USERID"
     open "https://bolt.new/api/rate-limits/reset/$USERID/all"

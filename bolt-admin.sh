@@ -26,3 +26,30 @@ else
 fi
 
 open "$url"
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+COPY_USER_ID_SCRIPT="$SCRIPT_DIR/copy-user-id-from-browser.sh"
+
+# Give the browser time to load, then retry extraction a few times if needed.
+attempts=0
+max_attempts=4
+sleep_between=1.5
+
+if [[ -x "$COPY_USER_ID_SCRIPT" ]]; then
+  sleep "$sleep_between"
+  while (( attempts < max_attempts )); do
+    "$COPY_USER_ID_SCRIPT"
+    status=$?
+    if (( status == 0 )); then
+      exit 0
+    fi
+    (( attempts++ ))
+    if (( status != 2 || attempts == max_attempts )); then
+      echo "copy-user-id-from-browser.sh failed with status $status" >&2
+      exit $status
+    fi
+    sleep "$sleep_between"
+  done
+else
+  echo "Warning: copy-user-id-from-browser.sh not found or not executable at $COPY_USER_ID_SCRIPT" >&2
+fi
