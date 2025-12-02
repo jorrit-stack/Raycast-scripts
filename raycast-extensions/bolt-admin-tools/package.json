@@ -1,0 +1,52 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "bolt-admin-tools",
+  "title": "Bolt Admin Tools",
+  "description": "Internal utilities for StackBlitz/Bolt support flows such as user lookups and token management.",
+  "icon": "icon.png",
+  "author": "jorrit_harmamny",
+  "owner": "bolt-new",
+  "categories": [
+    "Productivity"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "bolt-admin-search",
+      "title": "Open Bolt Admin User",
+      "description": "Jump to StackBlitz admin filtered by user ID or e-mail.",
+      "subtitle": "Support Tools",
+      "mode": "view"
+    },
+    {
+      "name": "bolt-user-id-capture",
+      "title": "Capture User ID from Browser",
+      "description": "Extract the numeric StackBlitz User ID from the active Chromium tab and copy it to the clipboard.",
+      "subtitle": "Support Tools",
+      "mode": "view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.103.8",
+    "execa": "^9.5.2"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.0.4",
+    "@types/jest": "^30.0.0",
+    "@types/node": "22.13.10",
+    "@types/react": "19.0.10",
+    "eslint": "^9.22.0",
+    "jest": "^30.2.0",
+    "prettier": "^3.5.3",
+    "ts-jest": "^29.4.5",
+    "typescript": "^5.8.2"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}

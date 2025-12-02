@@ -1,0 +1,28 @@
+{
+  "name": "raycast-stripe-promo-extension",
+  "version": "1.0.0",
+  "description": "A Raycast extension for checking Stripe promo codes.",
+  "main": "src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "raycast run",
+    "dev": "raycast dev"
+  },
+  "keywords": [
+    "raycast",
+    "stripe",
+    "promo",
+    "codes"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.2"
+  },
+  "devDependencies": {
+    "typescript": "^4.1.2"
+  },
+  "raycast": {
+    "schemaVersion": 1
+  }
+}

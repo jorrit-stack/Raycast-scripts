@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "title": "Stripe Promo Code Checker",
+  "description": "Check a Stripe promo code and view coupon details",
+  "mode": "fullOutput",
+  "packageName": "Stripe Tools",
+  "icon": "💳",
+  "variables": [
+    {
+      "type": "text",
+      "name": "promo",
+      "placeholder": "Promo Code"
+    }
+  ],
+  "script": "command.sh"
+}

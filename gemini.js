@@ -59,11 +59,15 @@ const boltGuidelines = [
 const commonRules = [];
 if (recipientName && recipientName.trim() !== "") {
   commonRules.push(
-    `If the email context doesn't include a recipient name, address them by name: ${recipientName}. Start with a friendly greeting using their name.`
+    `If the email context doesn't include a recipient name, address them by name: ${recipientName}. Start with a friendly greeting using their name (for example: "Hi ${recipientName},").`
+  );
+} else {
+  commonRules.push(
+    'If you do not know the customer name, start with a generic friendly greeting such as "Hi there,".'
   );
 }
 commonRules.push(
-  "Do not include my name or any signature/footer. Write only the reply body."
+  "You may end the email with a short generic closing (for example: Best, Best regards, or similar) but do not include my name in the closing, as my email client will add my signature automatically."
 );
 
 const baseBlock = commonRules.join("\n");
