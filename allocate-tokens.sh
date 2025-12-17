@@ -124,15 +124,33 @@ if html_match:
         sys.exit(0)
 
 # Strategy 4: Look for common admin table patterns where username is in a column
+# Pattern: ID followed by username in tab-separated or space-separated table format
 for line in lines:
-    # Pattern: number followed by username (common in admin tables)
-    match = re.match(r'^\d+\s+([a-zA-Z0-9._-]{2,50})\b', line)
-    if match:
-        username = match.group(1)
-        # Skip if it looks like a date or other non-username
-        if not re.match(r'^\d{4}-\d{2}-\d{2}', username):
-            print(username)
-            sys.exit(0)
+    # Check if line contains both a number (ID) and an email
+    if re.search(r'\d{4,}') and '@' in line:
+        # Try tab-separated format first (most common in admin tables)
+        parts = line.split('\t')
+        for i, part in enumerate(parts):
+            if '@' in part:
+                # Email found, username should be the part before it
+                if i > 0:
+                    username = parts[i-1].strip()
+                    # Validate username
+                    if username and re.match(r'^[a-zA-Z0-9._-]{2,50}$', username):
+                        if username.lower() not in ['sentry', 'traces', 'replays', 'view', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']:
+                            print(username)
+                            sys.exit(0)
+        
+        # Try space-separated format
+        parts = line.split()
+        for i, part in enumerate(parts):
+            if '@' in part:
+                if i > 0:
+                    username = parts[i-1].strip()
+                    if username and re.match(r'^[a-zA-Z0-9._-]{2,50}$', username):
+                        if username.lower() not in ['sentry', 'traces', 'replays', 'view']:
+                            print(username)
+                            sys.exit(0)
 
 # Strategy 5: Look for text that appears in header/navigation (often username)
 # Common pattern: username appears alone on a line or near "Dashboard", "Admin", etc.
@@ -192,7 +210,7 @@ APPLESCRIPT
 fi
 
 # Format reason: lowercase and replace spaces/special chars with hyphens
-FORMATTED_REASON=$(echo "$REASON" | python3 -c "
+FORMATTED_REASON=$(echo "$REASON" | python3 <<'PYEOF'
 import sys
 import re
 text = sys.stdin.read().strip()
@@ -207,7 +225,8 @@ text = re.sub(r'-+', '-', text)
 # Remove leading/trailing hyphens
 text = text.strip('-')
 print(text)
-")
+PYEOF
+)
 
 echo "Username: $USERNAME"
 echo "Token amount: $TOKEN_AMOUNT"
@@ -230,8 +249,131 @@ for browser in "${BROWSERS[@]}"; do
   fi
 done
 
-/usr/bin/osascript <<APPLESCRIPT
-tell application "$app"
+# Escape variables for use in JavaScript strings using Python (safer than sed)
+escape_js_string() {
+  printf '%s' "$1" | python3 <<'PYEOF' | sed 's/^"//;s/"$//'
+import sys
+import json
+text = sys.stdin.read().strip()
+print(json.dumps(text))
+PYEOF
+}
+
+ESCAPED_USERNAME=$(escape_js_string "${USERNAME:-}")
+ESCAPED_LABEL=$(escape_js_string "${FORMATTED_REASON:-}")
+ESCAPED_TOKENS=$(escape_js_string "${TOKEN_AMOUNT:-}")
+
+# Build the JavaScript code as a here-doc, then escape it for AppleScript
+JS_CODE=$(cat <<'JS_EOF'
+(function() {
+  function parseUtcDateTime(str) {
+    const m = str.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) UTC$/);
+    if (!m) return null;
+    const [_, y, mon, d, h, min, s] = m.map(Number);
+    return new Date(Date.UTC(y, mon - 1, d, h, min, s));
+  }
+  
+  function formatUtcDateTime(dt) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const y = dt.getUTCFullYear();
+    const mon = pad(dt.getUTCMonth() + 1);
+    const d = pad(dt.getUTCDate());
+    const h = pad(dt.getUTCHours());
+    const min = pad(dt.getUTCMinutes());
+    const s = pad(dt.getUTCSeconds());
+    return y + '-' + mon + '-' + d + ' ' + h + ':' + min + ':' + s + ' UTC';
+  }
+  
+  function addOneMonthUTC(dt) {
+    const y = dt.getUTCFullYear();
+    const m = dt.getUTCMonth();
+    const d = dt.getUTCDate();
+    const h = dt.getUTCHours();
+    const min = dt.getUTCMinutes();
+    const s = dt.getUTCSeconds();
+    const targetMonth = m + 1;
+    const startNextMonth = new Date(Date.UTC(y, targetMonth, 1, h, min, s));
+    const lastDayNextMonth = new Date(Date.UTC(y, targetMonth + 1, 0, h, min, s)).getUTCDate();
+    const clampedDay = Math.min(d, lastDayNextMonth);
+    return new Date(Date.UTC(y, targetMonth, clampedDay, h, min, s));
+  }
+  
+  function byXPath(xp) {
+    return document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+  }
+  
+  const userEl = byXPath("//*[@id='user_token_allocation_user_id']");
+  const labelEl = byXPath("//*[@id='user_token_allocation_label']");
+  const tokensEl = byXPath("//*[@id='user_token_allocation_tokens']");
+  const startsEl = byXPath("//*[@id='user_token_allocation_starts_at']");
+  const expiresEl = byXPath("//*[@id='user_token_allocation_expires_at']");
+  
+  if (!userEl || !labelEl || !tokensEl || !startsEl || !expiresEl) {
+    console.warn('Some fields were not found. Waiting...');
+    return 'ERROR: Fields not found';
+  }
+  
+  const userVal = 'USERNAME_PLACEHOLDER';
+  const labelVal = 'LABEL_PLACEHOLDER';
+  const tokensVal = 'TOKENS_PLACEHOLDER';
+  
+  userEl.value = userVal;
+  userEl.dispatchEvent(new Event('input', { bubbles: true }));
+  userEl.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  labelEl.value = labelVal;
+  labelEl.dispatchEvent(new Event('input', { bubbles: true }));
+  labelEl.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  tokensEl.value = tokensVal;
+  tokensEl.dispatchEvent(new Event('input', { bubbles: true }));
+  tokensEl.dispatchEvent(new Event('change', { bubbles: true }));
+  
+  const startsStr = startsEl.value;
+  const startsDt = parseUtcDateTime(startsStr);
+  if (startsDt) {
+    const expiresDt = addOneMonthUTC(startsDt);
+    const expiresStr = formatUtcDateTime(expiresDt);
+    expiresEl.value = expiresStr;
+    expiresEl.dispatchEvent(new Event('input', { bubbles: true }));
+    expiresEl.dispatchEvent(new Event('change', { bubbles: true }));
+    return 'SUCCESS: Form filled';
+  } else {
+    return 'ERROR: Could not parse start date';
+  }
+})();
+JS_EOF
+)
+
+# Replace placeholders and write directly to temp file
+TMP_JS=$(mktemp)
+TMP_TEMPLATE=$(mktemp)
+TMP_PY=$(mktemp)
+printf '%s' "$JS_CODE" > "$TMP_TEMPLATE"
+cat > "$TMP_PY" <<'PYEOF'
+import sys
+import os
+tmp_template = sys.argv[1]
+tmp_js = sys.argv[2]
+escaped_username = sys.argv[3]
+escaped_label = sys.argv[4]
+escaped_tokens = sys.argv[5]
+
+with open(tmp_template, 'r') as f:
+    js_template = f.read()
+js_template = js_template.replace('USERNAME_PLACEHOLDER', escaped_username)
+js_template = js_template.replace('LABEL_PLACEHOLDER', escaped_label)
+js_template = js_template.replace('TOKENS_PLACEHOLDER', escaped_tokens)
+with open(tmp_js, 'w') as f:
+    f.write(js_template)
+PYEOF
+python3 "$TMP_PY" "$TMP_TEMPLATE" "$TMP_JS" "$ESCAPED_USERNAME" "$ESCAPED_LABEL" "$ESCAPED_TOKENS"
+rm -f "$TMP_TEMPLATE" "$TMP_PY"
+
+# Write AppleScript to temp file to avoid quoting issues
+TMP_APPLESCRIPT=$(mktemp)
+cat > "$TMP_APPLESCRIPT" <<'APPLESCRIPT_EOF'
+tell application APP_PLACEHOLDER
   activate
   delay 1
   
@@ -254,103 +396,37 @@ tell application "$app"
   set theWindow to front window
   set theTab to active tab of theWindow
   
-  set fillScript to "
-    (function() {
-      // Helper: parse 'YYYY-MM-DD HH:mm:ss UTC' into Date in UTC
-      function parseUtcDateTime(str) {
-        const m = str.match(/^(\\d{4})-(\\d{2})-(\\d{2}) (\\d{2}):(\\d{2}):(\\d{2}) UTC$/);
-        if (!m) return null;
-        const [_, y, mon, d, h, min, s] = m.map(Number);
-        return new Date(Date.UTC(y, mon - 1, d, h, min, s));
-      }
-      
-      // Helper: format Date back to 'YYYY-MM-DD HH:mm:ss UTC'
-      function formatUtcDateTime(dt) {
-        const pad = (n) => String(n).padStart(2, '0');
-        const y = dt.getUTCFullYear();
-        const mon = pad(dt.getUTCMonth() + 1);
-        const d = pad(dt.getUTCDate());
-        const h = pad(dt.getUTCHours());
-        const min = pad(dt.getUTCMinutes());
-        const s = pad(dt.getUTCSeconds());
-        return y + '-' + mon + '-' + d + ' ' + h + ':' + min + ':' + s + ' UTC';
-      }
-      
-      // Helper: add one calendar month
-      function addOneMonthUTC(dt) {
-        const y = dt.getUTCFullYear();
-        const m = dt.getUTCMonth();
-        const d = dt.getUTCDate();
-        const h = dt.getUTCHours();
-        const min = dt.getUTCMinutes();
-        const s = dt.getUTCSeconds();
-        
-        const targetMonth = m + 1;
-        const startNextMonth = new Date(Date.UTC(y, targetMonth, 1, h, min, s));
-        const lastDayNextMonth = new Date(Date.UTC(y, targetMonth + 1, 0, h, min, s)).getUTCDate();
-        const clampedDay = Math.min(d, lastDayNextMonth);
-        
-        return new Date(Date.UTC(y, targetMonth, clampedDay, h, min, s));
-      }
-      
-      function byXPath(xp) {
-        return document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-      }
-      
-      const userEl = byXPath(\"//*[@id='user_token_allocation_user_id']\");
-      const labelEl = byXPath(\"//*[@id='user_token_allocation_label']\");
-      const tokensEl = byXPath(\"//*[@id='user_token_allocation_tokens']\");
-      const startsEl = byXPath(\"//*[@id='user_token_allocation_starts_at']\");
-      const expiresEl = byXPath(\"//*[@id='user_token_allocation_expires_at']\");
-      
-      if (!userEl || !labelEl || !tokensEl || !startsEl || !expiresEl) {
-        console.warn('Some fields were not found. Waiting...');
-        return 'ERROR: Fields not found';
-      }
-      
-      const userVal = '$USERNAME';
-      const labelVal = '$FORMATTED_REASON';
-      const tokensVal = '$TOKEN_AMOUNT';
-      
-      // Fill user field
-      userEl.value = userVal;
-      userEl.dispatchEvent(new Event('input', { bubbles: true }));
-      userEl.dispatchEvent(new Event('change', { bubbles: true }));
-      
-      // Fill label field
-      labelEl.value = labelVal;
-      labelEl.dispatchEvent(new Event('input', { bubbles: true }));
-      labelEl.dispatchEvent(new Event('change', { bubbles: true }));
-      
-      // Fill tokens field
-      tokensEl.value = tokensVal;
-      tokensEl.dispatchEvent(new Event('input', { bubbles: true }));
-      tokensEl.dispatchEvent(new Event('change', { bubbles: true }));
-      
-      // Set expiry to one month from start date
-      const startsStr = startsEl.value;
-      const startsDt = parseUtcDateTime(startsStr);
-      if (startsDt) {
-        const expiresDt = addOneMonthUTC(startsDt);
-        const expiresStr = formatUtcDateTime(expiresDt);
-        expiresEl.value = expiresStr;
-        expiresEl.dispatchEvent(new Event('input', { bubbles: true }));
-        expiresEl.dispatchEvent(new Event('change', { bubbles: true }));
-        return 'SUCCESS: Form filled';
-      } else {
-        return 'ERROR: Could not parse start date';
-      }
-    })();
-  "
+  -- Read JavaScript from temporary file
+  set jsFile to POSIX file "TMP_JS_PLACEHOLDER"
+  set fillScript to read jsFile as «class utf8»
   
   try
     set result to execute theTab javascript fillScript
     return result
   on error errMsg
-    return "ERROR: " & errMsg
+    return "ERROR: " & errMsg as string
   end try
 end tell
-APPLESCRIPT
+APPLESCRIPT_EOF
+# Replace placeholders with actual values using a temp Python script
+TMP_APPLESCRIPT_FINAL=$(mktemp)
+TMP_REPLACE_SCRIPT=$(mktemp)
+cat > "$TMP_REPLACE_SCRIPT" <<'PYREPLACE'
+import sys
+with open(sys.argv[1], 'r') as f:
+    content = f.read()
+content = content.replace('APP_PLACEHOLDER', sys.argv[2])
+content = content.replace('TMP_JS_PLACEHOLDER', sys.argv[3])
+with open(sys.argv[4], 'w') as f:
+    f.write(content)
+PYREPLACE
+python3 "$TMP_REPLACE_SCRIPT" "$TMP_APPLESCRIPT" "$app" "$TMP_JS" "$TMP_APPLESCRIPT_FINAL"
+rm -f "$TMP_REPLACE_SCRIPT"
+/usr/bin/osascript "$TMP_APPLESCRIPT_FINAL"
+rm -f "$TMP_APPLESCRIPT" "$TMP_APPLESCRIPT_FINAL"
+
+# Clean up temporary file
+rm -f "$TMP_JS"
 
 echo ""
 echo "Form filled successfully!"
