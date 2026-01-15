@@ -24,6 +24,13 @@
       "description": "Extract the numeric StackBlitz User ID from the active Chromium tab and copy it to the clipboard.",
       "subtitle": "Support Tools",
       "mode": "view"
+    },
+    {
+      "name": "stripe-promo-checker",
+      "title": "Stripe Promo Code Checker",
+      "description": "Check Stripe promotion code details and associated coupon information.",
+      "subtitle": "Stripe Tools",
+      "mode": "view"
     }
   ],
   "dependencies": {
@@ -41,6 +48,16 @@
     "ts-jest": "^29.4.5",
     "typescript": "^5.8.2"
   },
+  "preferences": [
+    {
+      "name": "stripeApiKey",
+      "type": "password",
+      "required": true,
+      "title": "Stripe API Key",
+      "description": "Your Stripe API key (starts with sk_live_ or sk_test_)",
+      "placeholder": "sk_live_..."
+    }
+  ],
   "scripts": {
     "build": "ray build -e dist",
     "dev": "ray develop",
